@@ -11,6 +11,7 @@ export function build({ grid, layer, materials, stage }) {
   const garage = buildGarage(grid, layer);
   const helicopter = buildHelicopter(layer);
   const elevator = buildElevator(layer);
+  const people = buildPeople(layer);
   const mountain = buildMountain(layer, materials);
   stage.scene.add(mountain.group);
   return {
@@ -18,11 +19,50 @@ export function build({ grid, layer, materials, stage }) {
       static: house.batch, garage: garage.batch, carLights: garage.carLights,
       heliBody: helicopter.body, heliRotor: helicopter.rotor,
       elevator: elevator.batch, elevatorPlatform: elevator.platform,
+      people,
     }, planes: [garage.car],
     obstacles: [...house.obstacles, ...garage.obstacles],
     forest: buildForest(grid, layer, TREES), sites: [mountain],
     named: { mountain, car: garage.car, helicopter: helicopter.pose, elevator: elevator.pose },
   };
+}
+
+function buildPeople(layer) {
+  const B = new BoxBatch(layer);
+  const person = (x, y, z, yaw, colors, wave = false, backpack = false) => B.at(x, y, z, yaw, () => {
+    const paint = color => ({ tex: 'paint', tint: color });
+    for (const side of [-1, 1]) {
+      B.box(side * 0.12, 0.12, 0.015, 0.19, 0.12, 0.25, paint(colors.shoes));
+      B.box(side * 0.12, 0.18, 0, 0.16, 0.48, 0.18, paint(colors.pants));
+      B.box(side * 0.31, 0.64, 0, 0.15, 0.5, 0.22, paint(colors.top));
+      B.box(side * 0.31, 0.61, 0.015, 0.13, 0.12, 0.2, paint(colors.skin));
+    }
+    B.box(0, 0.64, 0, 0.48, 0.58, 0.28, paint(colors.top));
+    B.box(0, 1.2, 0, 0.16, 0.12, 0.17, paint(colors.skin));
+    B.box(0, 1.29, 0, 0.34, 0.34, 0.29, paint(colors.skin));
+    B.box(0, 1.58, -0.005, 0.36, 0.09, 0.31, paint(colors.hair));
+    B.box(0, 1.48, 0.153, 0.28, 0.08, 0.035, paint(colors.hair));
+    for (const side of [-1, 1]) {
+      B.box(side * 0.155, 1.4, 0, 0.055, 0.23, 0.29, paint(colors.hair));
+      B.box(side * 0.073, 1.43, 0.153, 0.045, 0.045, 0.025, paint(0x282326));
+    }
+    B.box(0, 1.36, 0.16, 0.035, 0.035, 0.025, paint(0x754a45));
+    if (backpack) {
+      B.box(0, 0.83, -0.19, 0.34, 0.42, 0.16, paint(colors.bag || 0x9b6847));
+      B.box(0, 0.69, -0.275, 0.25, 0.13, 0.03, paint(colors.trim || 0xd6b16f));
+    }
+    if (wave) {
+      B.box(0.39, 1.23, 0, 0.14, 0.32, 0.2, paint(colors.top), { rz: -0.55 });
+      B.box(0.48, 1.47, 0, 0.13, 0.12, 0.18, paint(colors.skin));
+    }
+  });
+
+  // Small voxel visitors give the house, garage, and mountain trail a lived-in feel.
+  person(-3.6, 0, 6.4, Math.PI, { skin: 0xe9b895, hair: 0x432b25, top: 0x48a8a0, pants: 0x334c75, shoes: 0xe8e1d8 }, true);
+  person(4.35, 4, -5.2, -Math.PI / 2, { skin: 0xf1c49c, hair: 0x5a3226, top: 0xf08abc, pants: 0x7654a0, shoes: 0xf2eee8 });
+  person(25.3, 0, 8.1, Math.PI / 2, { skin: 0xd99c72, hair: 0x262326, top: 0x426f9f, pants: 0x343b42, shoes: 0x242629 }, false, true);
+  person(8.1, 0, -23.1, -Math.PI / 2, { skin: 0xe5b18a, hair: 0x30261f, top: 0xd46e43, pants: 0x52663b, shoes: 0x554638, bag: 0x70482e }, false, true);
+  return B;
 }
 
 export function setup({ stage, world, player, avatar, rig }) {
