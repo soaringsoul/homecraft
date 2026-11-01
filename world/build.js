@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { buildIsland } from '@engine/world/terrain.js';
 import { buildForest } from '@engine/world/landscape.js';
 import { BoxBatch } from '@engine/world/blocks.js';
+import { canvasTexture } from '@engine/world/textures.js';
 import { buildMountain } from '../examples/terry-home/world/mountain.js';
 import { createCar } from '../examples/terry-home/world/car.js';
 import { buildSailboat } from './sailboat.js';
 import { buildPeople } from './people.js';
-import { ISLAND, HOUSE, UPPER_FLOOR, STAIRS, GARAGE, TREES, SPAWN } from './layout.js';
+import { ISLAND, HOUSE, UPPER_FLOOR, STAIRS, BAKERY, GARAGE, TREES, SPAWN } from './layout.js';
 
 export function build({ grid, layer, materials, stage }) {
   buildIsland(grid, ISLAND, { surfaceAt: () => 'grass', corner: 10, wobble: 0 });
@@ -23,8 +24,9 @@ export function build({ grid, layer, materials, stage }) {
       static: house.batch, garage: garage.batch, carLights: garage.carLights,
       heliBody: helicopter.body, heliRotor: helicopter.rotor,
       elevator: elevator.batch, elevatorPlatform: elevator.platform,
-    }, planes: [garage.car],
+    }, planes: [garage.car, ...house.planes],
     obstacles: [...house.obstacles, ...garage.obstacles],
+    bakes: house.bakes,
     forest: buildForest(grid, layer, TREES), sites: [mountain],
     named: { mountain, car: garage.car, helicopter: helicopter.pose, elevator: elevator.pose, people, sailboat },
   };
@@ -524,6 +526,8 @@ function buildHouse(grid, layer) {
   // Raise the back of the house into a loft, leaving the south half open as
   // the lower storey and the west-edge stairwell clear.
   grid.fill(x0, UPPER_FLOOR - 1, z0, x1, UPPER_FLOOR, STAIRS.z0, 'upper_floor');
+  // Distinct stone tile identifies the public bakery floor directly below the loft.
+  grid.fill(BAKERY.x0, -1, BAKERY.z0, BAKERY.x1, 0, BAKERY.z1, 'travertine');
 
   // Transparent glass around the square shell. The south wall has a central,
   // two-block-wide opening facing the spawn point.
@@ -592,14 +596,122 @@ function buildHouse(grid, layer) {
     B.box(railX, y, z, 0.07, 0.8, 0.07, { tex: 'black_metal' });
   }
 
+  const bakeryObstacles = [];
+  const bakeryWall = (x, z, w, d, obstacle) => {
+    B.box(x, 0, z, w, 2.36, d, { tex: 'plaster' });
+    B.box(x, 0, z, w + 0.02, 0.16, d + 0.02, { tex: 'wood_panel' });
+    if (obstacle) bakeryObstacles.push(obstacle);
+  };
+  // The wall facing the hall has a broad walk-in opening; the side and back
+  // partitions make the space beneath the loft read as a separate shop.
+  bakeryWall(-2.56, -4.56, 0.88, 0.16, { x0: -3.02, x1: -2.1, z0: -4.68, z1: -4.44, level: 0 });
+  bakeryWall(4.26, -4.56, 2.48, 0.16, { x0: 2.98, x1: 5.54, z0: -4.68, z1: -4.44, level: 0 });
+  bakeryWall(-3.06, -6.25, 0.16, 3.5, { x0: -3.2, x1: -2.92, z0: -8.02, z1: -4.48, level: 0 });
+  bakeryWall(2.06, -6.25, 0.16, 3.5, { x0: 1.92, x1: 2.2, z0: -8.02, z1: -4.48, level: 0 });
+  bakeryWall(-0.5, -8.06, 5.12, 0.16, { x0: -3.08, x1: 2.08, z0: -8.2, z1: -7.92, level: 0 });
+
+  // Warm fascia and a compact painted sign in front of the open entrance.
+  B.box(0.45, 2.36, -4.56, 5.08, 0.58, 0.18, { tex: 'wood_panel' });
+  B.box(0.45, 2.39, -4.44, 4.88, 0.52, 0.05, { tex: 'paint', tint: 0x713b46 });
+  const signTexture = canvasTexture(768, 96, (ctx, w, h) => {
+    ctx.fillStyle = '#713b46'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#e7c987'; ctx.lineWidth = 4; ctx.strokeRect(5, 5, w - 10, h - 10);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff3dc'; ctx.font = '700 36px system-ui, sans-serif';
+    ctx.fillText('锦一面包店', w / 2, 31);
+    ctx.fillStyle = '#e7c987'; ctx.font = '600 15px system-ui, sans-serif';
+    ctx.fillText('BAKERY  ·  COFFEE', w / 2, 68);
+  }, { pixelated: false });
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.78, 0.47), new THREE.MeshBasicMaterial({ map: signTexture }));
+  sign.position.set(0.45, 2.65, -4.405); sign.name = 'jin-yi-bakery-sign';
+
+  const bakeryLook = { tex: 'oak' }, steelLook = { tex: 'stainless' };
+  const obstacle = (x, z, w, d) => bakeryObstacles.push({
+    x0: x - w / 2 - 0.05, x1: x + w / 2 + 0.05,
+    z0: z - d / 2 - 0.05, z1: z + d / 2 + 0.05, level: 0,
+  });
+
+  // Low service counter near the entrance, leaving clear aisles on both sides.
+  B.box(0, 0, -5.72, 1.52, 0.82, 0.62, { tex: 'wood_panel' });
+  B.box(0, 0.82, -5.72, 1.64, 0.12, 0.72, { tex: 'oak' });
+  B.box(0, 0.24, -5.395, 1.28, 0.16, 0.035, { tex: 'paint', tint: 0x713b46 });
+  B.box(0, 0.55, -5.37, 1.1, 0.04, 0.035, { tex: 'black_metal' });
+  obstacle(0, -5.72, 1.64, 0.74);
+
+  // Refrigerated glass case with pastry shelves and a cool lit nameplate.
+  const fridgeX = -2.24, fridgeZ = -7.08;
+  B.box(fridgeX, 0, fridgeZ, 1.12, 0.42, 1.02, steelLook);
+  B.box(fridgeX, 0.42, fridgeZ, 1.03, 0.9, 0.91, { tex: 'glass', glass: true });
+  for (const dx of [-0.52, 0.52]) for (const dz of [-0.46, 0.46]) {
+    B.box(fridgeX + dx, 0.42, fridgeZ + dz, 0.07, 0.95, 0.07, { tex: 'stainless' });
+  }
+  for (const y of [0.77, 1.08]) B.box(fridgeX, y, fridgeZ, 0.96, 0.035, 0.8, { tex: 'stainless' });
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 3; col++) {
+    const px = fridgeX - 0.31 + col * 0.31, py = 0.81 + row * 0.31, pz = fridgeZ + 0.12;
+    const crust = (row + col) % 2 ? 0xc98945 : 0xe3b56b;
+    B.box(px, py, pz, 0.2, 0.12, 0.2, { tex: 'paint', tint: crust });
+    B.box(px, py + 0.11, pz + 0.01, 0.12, 0.04, 0.12, { tex: 'paint', tint: 0xffe2a8 });
+  }
+  B.box(fridgeX, 0.13, fridgeZ + 0.53, 0.76, 0.12, 0.025, { tex: 'paint', tint: 0xc7ebf2, emissive: 0.45 });
+  obstacle(fridgeX, fridgeZ, 1.2, 1.1);
+
+  // Coffee preparation station and espresso machine behind the service bar.
+  const coffeeX = -0.75, coffeeZ = -7.55;
+  B.box(coffeeX, 0, coffeeZ, 1.2, 0.78, 0.68, { tex: 'wood_panel' });
+  B.box(coffeeX, 0.78, coffeeZ, 1.3, 0.12, 0.78, bakeryLook);
+  B.box(coffeeX - 0.2, 0.9, coffeeZ, 0.68, 0.56, 0.5, steelLook);
+  B.box(coffeeX - 0.2, 1.42, coffeeZ, 0.72, 0.12, 0.54, { tex: 'black_metal' });
+  B.box(coffeeX - 0.2, 1.14, coffeeZ + 0.27, 0.58, 0.34, 0.04, { tex: 'black_metal' });
+  B.box(coffeeX - 0.2, 1.18, coffeeZ + 0.3, 0.36, 0.18, 0.025, { tex: 'paint', tint: 0xc98955 });
+  for (const dx of [-0.37, -0.03]) {
+    B.box(coffeeX + dx, 0.84, coffeeZ + 0.4, 0.12, 0.18, 0.04, { tex: 'black_metal' });
+    B.box(coffeeX + dx, 1.04, coffeeZ + 0.35, 0.05, 0.1, 0.08, { tex: 'stainless' });
+  }
+  // Two ceramic cups and their saucers sit beside the machine.
+  for (const dx of [0.24, 0.46]) {
+    B.box(coffeeX + dx, 0.91, coffeeZ + 0.13, 0.2, 0.035, 0.2, { tex: 'linen' });
+    B.box(coffeeX + dx, 0.95, coffeeZ + 0.13, 0.12, 0.16, 0.12, { tex: 'linen' });
+    B.box(coffeeX + dx, 1.1, coffeeZ + 0.13, 0.13, 0.025, 0.13, { tex: 'paint', tint: 0x6b3f35 });
+  }
+  obstacle(coffeeX, coffeeZ, 1.35, 0.82);
+
+  // Three-tier wooden bread rack, stocked with several small golden loaves.
+  const rackX = 0.85, rackZ = -7.52;
+  for (const dx of [-0.25, 0.25]) B.box(rackX + dx, 0, rackZ, 0.07, 1.9, 0.07, { tex: 'wood_panel' });
+  for (const y of [0.45, 1.03, 1.61]) {
+    B.box(rackX, y, rackZ, 0.62, 0.07, 0.64, { tex: 'oak' });
+    for (let col = 0; col < 3; col++) {
+      const x = rackX - 0.19 + col * 0.19;
+      B.box(x, y + 0.07, rackZ + 0.02, 0.15, 0.13, 0.24, { tex: 'paint', tint: col % 2 ? 0xd5a25d : 0xb9783d });
+      B.box(x, y + 0.19, rackZ + 0.025, 0.09, 0.035, 0.15, { tex: 'paint', tint: 0xf1cf91 });
+    }
+  }
+  obstacle(rackX, rackZ, 0.72, 0.74);
+
+  // Tall supply cupboard with divided doors, shelves and dark pull handles.
+  const cabinetX = -2.34, cabinetZ = -5.7;
+  B.box(cabinetX, 0, cabinetZ, 0.88, 1.82, 0.58, { tex: 'wood_panel' });
+  B.box(cabinetX, 1.82, cabinetZ, 0.98, 0.1, 0.66, { tex: 'oak' });
+  B.box(cabinetX - 0.21, 0.17, cabinetZ + 0.3, 0.36, 1.55, 0.035, { tex: 'walnut' });
+  B.box(cabinetX + 0.21, 0.17, cabinetZ + 0.3, 0.36, 1.55, 0.035, { tex: 'walnut' });
+  for (const y of [0.65, 1.17]) B.box(cabinetX, y, cabinetZ, 0.8, 0.055, 0.5, { tex: 'oak' });
+  for (const dx of [-0.08, 0.08]) B.box(cabinetX + dx, 0.9, cabinetZ + 0.34, 0.035, 0.18, 0.04, { tex: 'black_metal' });
+  obstacle(cabinetX, cabinetZ, 1.0, 0.68);
+
+  // Low pendant shades warm the pastry and coffee counters after dark.
+  for (const [x, z] of [[-1.75, -6.3], [0.85, -6.35]]) {
+    B.box(x, 2.55, z, 0.035, 0.25, 0.035, { tex: 'black_metal' });
+    B.box(x, 2.3, z, 0.38, 0.2, 0.38, { tex: 'paint', tint: 0xffdfa8, emissive: 0.75 });
+  }
+
   // Upstairs bed and a compact TV table, kept clear of the stair landing.
-  const bedX = -2.4, bedZ = -6.7;
+  const bedX = 4.1, bedZ = -6.7;
   B.box(bedX, UPPER_FLOOR, bedZ, 2.3, 0.3, 2.2, { tex: 'paint', tint: 0x56307f });
   B.box(bedX, UPPER_FLOOR + 0.3, bedZ, 2.15, 0.2, 2.05, { tex: 'velvet', tint: 0x8053b8 });
   B.box(bedX, UPPER_FLOOR, bedZ - 1.04, 2.3, 0.85, 0.12, { tex: 'paint', tint: 0x684092 });
   B.box(bedX, UPPER_FLOOR + 0.5, bedZ - 0.72, 0.9, 0.14, 0.48, { tex: 'linen', tint: 0xf18bc4 });
 
-  const tableX = 2.35, tableZ = -7.35, tableW = 1.25, tableD = 0.72;
+  const tableX = -4.5, tableZ = -7.35, tableW = 1.25, tableD = 0.72;
   B.box(tableX, UPPER_FLOOR + 0.66, tableZ, tableW, 0.08, tableD, { tex: 'oak' });
   for (const dx of [-0.52, 0.52]) for (const dz of [-0.27, 0.27]) {
     B.box(tableX + dx, UPPER_FLOOR, tableZ + dz, 0.07, 0.66, 0.07, { tex: 'oak' });
@@ -611,7 +723,13 @@ function buildHouse(grid, layer) {
   B.box(tvX, UPPER_FLOOR + 0.74, tvZ, 0.12, 0.12, 0.28, { tex: 'black_metal' });
   return {
     batch: B,
+    planes: [sign],
+    bakes: [
+      { id: 'bakery-pastry-counter', position: [-1.75, 2.55, -6.3], power: 1.8, radius: 5 },
+      { id: 'bakery-coffee-bar', position: [0.85, 2.55, -6.35], power: 1.6, radius: 5 },
+    ],
     obstacles: [
+      ...bakeryObstacles,
       { x0: bedX - 1.2, x1: bedX + 1.2, z0: bedZ - 1.15, z1: bedZ + 1.15, level: 1 },
       { x0: tableX - 0.7, x1: tableX + 0.7, z0: tableZ - 0.45, z1: tableZ + 0.45, level: 1 },
     ],

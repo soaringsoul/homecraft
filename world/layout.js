@@ -3,6 +3,9 @@ export const ISLAND = { x0: -36, x1: 38, z0: -26, z1: 31 };
 export const HOUSE = { x0: -6, x1: 6, z0: -9, z1: 3, height: 8 };
 export const UPPER_FLOOR = 4;
 export const STAIRS = { x0: -5.3, x1: -3.7, z0: -4.5, z1: 2.5 };
+// The bakery occupies the ground floor beneath the loft. The upper level stays
+// walkable around this opening and reconnects across the north side.
+export const BAKERY = { x0: -3, x1: 2, z0: -8, z1: -4.5 };
 export const INTRO = { pos: [52, 40, 66], portrait: [83, 64, 106], look: [0, 0, 2] };
 export const GARAGE = { x0: 9, x1: 23, z0: -4, z1: 10, gateZ0: 0.5, gateZ1: 5.5, car: [15.5, 3] };
 
@@ -12,6 +15,7 @@ export function floorAt(x, z) {
   // A one-metre rooftop walkway links the exterior elevator landing to the
   // helipad. The roof blocks at y=8 provide its walkable surface at y=9.
   if (x >= -2.5 && x < HOUSE.x1 && z >= -3.5 && z < -2.5) return HOUSE.height + 1;
+  if (x >= BAKERY.x0 && x < BAKERY.x1 && z >= BAKERY.z0 && z < BAKERY.z1) return 0;
   if (x >= HOUSE.x0 && x < HOUSE.x1 && z >= HOUSE.z0 && z < STAIRS.z0) return UPPER_FLOOR;
   if (x >= STAIRS.x0 && x < STAIRS.x1 && z >= STAIRS.z0 && z < STAIRS.z1) {
     return (STAIRS.z1 - z) * UPPER_FLOOR / (STAIRS.z1 - STAIRS.z0);
