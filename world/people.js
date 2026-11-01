@@ -18,6 +18,15 @@ export function buildPeople(mountain) {
 
 function createPeople(mountainRoute) {
   const indoorSpots = [[-2.8, 0, 0.8], [2.8, 0, 0.8], [-2.5, 0, -2.5], [2.5, 0, -2.5], [0, 0, -1.4], [0, 0, 1.2]];
+  // Ground-floor patrol loops stay clear of the stairwell along the west wall.
+  const indoorPaths = [
+    loop([[-3.3, -3.6], [-2, -3.6], [-2, -1.8], [-3.3, -1.8]]),
+    loop([[-0.9, -3.6], [0.4, -3.6], [0.4, -1.8], [-0.9, -1.8]]),
+    loop([[1.4, -3.6], [2.7, -3.6], [2.7, -1.8], [1.4, -1.8]]),
+    loop([[3.6, -3.6], [4.9, -3.6], [4.9, -1.8], [3.6, -1.8]]),
+    loop([[-2.8, -0.8], [-1.4, -0.8], [-1.4, 1.1], [-2.8, 1.1]]),
+    loop([[1.3, -0.7], [2.8, -0.7], [2.8, 1.2], [1.3, 1.2]]),
+  ];
   const actors = [
     { path: loop([[-4.8, 5.4], [-2.8, 5.4], [-2.8, 8.1], [-4.8, 8.1]]), speed: 0.55, palette: { skin: 0xe9b895, hair: 0x432b25, top: 0x48a8a0, trim: 0xd6c27a, pants: 0x334c75, shoes: 0xe8e1d8 } },
     { path: loop([[2, 5.2], [4.6, 5.2], [4.6, 8.3], [2, 8.3]]), speed: 0.62, palette: { skin: 0xf1c49c, hair: 0x5a3226, top: 0xf08abc, trim: 0xf6bed8, pants: 0x7654a0, shoes: 0xf2eee8, pony: true } },
@@ -40,9 +49,11 @@ function createPeople(mountainRoute) {
     }
     actor.normalPath = actor.path;
     actor.homeSpot = indoorSpots[index];
+    actor.indoorPath = indoorPaths[index];
     actor.loop = true;
     actor.arrived = false;
     actor.resumePath = null;
+    actor.shelterPath = null;
     const first = actor.path[0];
     actor.x = first[0]; actor.y = first[1]; actor.z = first[2];
     actor.heading = 0; actor.segment = 0; actor.progress = 0; actor.phase = index * 1.4;
@@ -154,10 +165,10 @@ function createPeople(mountainRoute) {
     for (let i = 0; i < actors.length; i++) {
       const actor = actors[i], points = [];
       actor.resumePath = null;
+      actor.shelterPath = null;
       if (on) {
         if (actor.x >= -6 && actor.x < 6 && actor.z >= -9 && actor.z < 3 && actor.y < 8) {
-          actor.path = [[actor.x, actor.y, actor.z]];
-          actor.segment = 0; actor.progress = 0; actor.loop = false; actor.arrived = true;
+          setPath(actor, actor.indoorPath, true);
           continue;
         }
         if (i === 4) {
@@ -173,6 +184,7 @@ function createPeople(mountainRoute) {
         } else {
           points.push([0, 0, 4.2], [0, 0, 2.2], actor.homeSpot);
         }
+        actor.shelterPath = actor.indoorPath;
         setPath(actor, points, false);
       } else if (actor.arrived || (actor.x >= -6 && actor.x < 6 && actor.z >= -9 && actor.z < 3 && actor.y < 8)) {
         points.push([0, 0, 2.2], [0, 0, 4.2]);
@@ -194,6 +206,11 @@ function createPeople(mountainRoute) {
     const step = Math.min(dt, 0.1);
     for (let i = 0; i < actors.length; i++) {
       const a = actors[i];
+      if (a.arrived && a.shelterPath) {
+        const shelterPath = a.shelterPath;
+        a.shelterPath = null;
+        setPath(a, shelterPath, true);
+      }
       if (a.arrived && a.resumePath) {
         const resumePath = a.resumePath;
         a.resumePath = null;
