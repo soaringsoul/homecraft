@@ -4,8 +4,9 @@ import { buildForest } from '@engine/world/landscape.js';
 import { BoxBatch } from '@engine/world/blocks.js';
 import { buildMountain } from '../examples/terry-home/world/mountain.js';
 import { createCar } from '../examples/terry-home/world/car.js';
+import { buildSailboat } from './sailboat.js';
 import { buildPeople } from './people.js';
-import { ISLAND, HOUSE, UPPER_FLOOR, STAIRS, GARAGE, TREES } from './layout.js';
+import { ISLAND, HOUSE, UPPER_FLOOR, STAIRS, GARAGE, TREES, SPAWN } from './layout.js';
 
 export function build({ grid, layer, materials, stage }) {
   buildIsland(grid, ISLAND, { surfaceAt: () => 'grass', corner: 10, wobble: 0 });
@@ -15,7 +16,8 @@ export function build({ grid, layer, materials, stage }) {
   const elevator = buildElevator(layer);
   const mountain = buildMountain(layer, materials);
   const people = buildPeople(mountain);
-  stage.scene.add(mountain.group, people.mesh);
+  const sailboat = buildSailboat(layer, materials);
+  stage.scene.add(mountain.group, people.mesh, sailboat.group);
   return {
     batches: {
       static: house.batch, garage: garage.batch, carLights: garage.carLights,
@@ -24,14 +26,16 @@ export function build({ grid, layer, materials, stage }) {
     }, planes: [garage.car],
     obstacles: [...house.obstacles, ...garage.obstacles],
     forest: buildForest(grid, layer, TREES), sites: [mountain],
-    named: { mountain, car: garage.car, helicopter: helicopter.pose, elevator: elevator.pose, people },
+    named: { mountain, car: garage.car, helicopter: helicopter.pose, elevator: elevator.pose, people, sailboat },
   };
 }
 
-export function setup({ stage, world, player, avatar, rig, sound }) {
+export function setup({ stage, world, nav, player, avatar, rig, sound }) {
   const car = world.car;
   const carLights = world.groups.carLights;
   const heli = world.helicopter;
+  const sailboat = world.sailboat;
+  const sailboatGroup = sailboat.group;
   const elevator = world.elevator;
   const heliBody = world.groups.heliBody, heliRotor = world.groups.heliRotor;
   const liftPlatform = world.groups.elevatorPlatform;
@@ -40,6 +44,7 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
 
   let x = GARAGE.car[0], z = GARAGE.car[1], heading = 0, speed = 0, driving = false;
   let hx = heli.x, hz = heli.z, hy = heli.y, hHeading = 0, hSpeed = 0, rotorAngle = 0, flying = false;
+  let bx = sailboat.x, bz = sailboat.z, bHeading = sailboat.heading, bSpeed = 0, sailing = false, boatClock = 0;
   let liftY = 0, liftTarget = null, liftBusy = false;
   let weatherSheltering = false, shelterStage = 'idle';
   const held = new Set();
@@ -101,6 +106,18 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
     for (const event of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(event, () => held.delete(key));
   }
 
+  const boatHud = document.createElement('div');
+  boatHud.style.cssText = hud.style.cssText;
+  boatHud.innerHTML = '<div style="color:#93c5fd;font-size:12px;letter-spacing:.08em">SAILBOAT · 驾驶中</div><div data-boat-speed style="font-size:28px;font-weight:800;margin:2px 0">0 <small style="font-size:14px;color:#94a3b8">km/h</small></div><div>W/S 前进倒退 · A/D 转向</div><div data-pad style="display:flex;gap:6px;margin-top:10px"><button data-key="a" aria-label="左转">◀</button><button data-key="w" aria-label="前进">▲</button><button data-key="s" aria-label="倒退">▼</button><button data-key="d" aria-label="右转">▶</button></div><button data-exit type="button" style="margin-top:10px;padding:9px 14px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:800;cursor:pointer">E 下船</button>';
+  document.body.append(boatHud);
+  const boatSpeedLabel = boatHud.querySelector('[data-boat-speed]');
+  for (const button of boatHud.querySelectorAll('[data-key]')) {
+    button.style.cssText = 'flex:1;padding:9px 11px;border:1px solid #64748b;border-radius:8px;background:#263238;color:white;font-size:18px;touch-action:none';
+    const key = button.dataset.key;
+    button.addEventListener('pointerdown', e => { e.preventDefault(); held.add(key); button.setPointerCapture(e.pointerId); });
+    for (const event of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(event, () => held.delete(key));
+  }
+
   function pose() {
     car.position.set(x, 0, z); car.rotation.y = heading; car.updateMatrix();
     if (carLights) { carLights.position.set(x, 0, z); carLights.rotation.y = heading; }
@@ -110,11 +127,16 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
     heliBody.position.set(hx, hy, hz); heliBody.rotation.y = hHeading;
     heliRotor.position.set(hx, hy, hz); heliRotor.rotation.y = hHeading + rotorAngle;
   }
+  function poseSailboat() {
+    sailboatGroup.position.set(bx, sailboat.y + Math.sin(boatClock * 0.9) * 0.045, bz);
+    sailboatGroup.rotation.set(Math.sin(boatClock * 0.72) * 0.018, bHeading, Math.sin(boatClock * 0.84) * 0.03, 'YXZ');
+  }
   function poseLift() { liftPlatform.position.set(elevator.x, liftY, elevator.z); }
-  poseHeli(); poseLift();
+  poseHeli(); poseSailboat(); poseLift();
 
   function nearCar() { return Math.hypot(player.pos.x - x, player.pos.z - z) < 4; }
   function nearHeli() { return Math.abs(player.y - (HOUSE.height + 1)) < 2 && Math.hypot(player.pos.x - hx, player.pos.z - hz) < 4; }
+  function nearSailboat() { return player.mode === 'ground' && Math.hypot(player.pos.x - bx, player.pos.z - bz) < 7; }
   function nearLift() {
     const top = player.y > HOUSE.height / 2;
     return top
@@ -150,6 +172,26 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
     releaseRider();
     player.teleport(heli.x + 2.5, heli.z);
     rig.recenter(player); heliHud.style.display = 'none';
+  }
+  function enterSailboat() {
+    if (sailing || driving || flying || liftBusy || !nearSailboat()) return false;
+    sailing = true; bSpeed = 0; held.clear(); player.cancel();
+    rig.skipIntro(); boatHud.style.display = 'block';
+    return true;
+  }
+  function leaveSailboat() {
+    if (!sailing) return;
+    sailing = false; bSpeed = 0; held.clear();
+    releaseRider(); boatHud.style.display = 'none';
+    const shoreZ = Math.max(ISLAND.z0 + 2.5, Math.min(ISLAND.z1 - 2.5, bz));
+    let shore = null;
+    for (const x of [ISLAND.x1 - 1.8, ISLAND.x1 - 3.2, ISLAND.x1 - 4.8, ISLAND.x1 - 6.2]) {
+      const candidate = nav.nearestStand(x, shoreZ);
+      if (nav.canStand(candidate.x, candidate.z)) { shore = candidate; break; }
+    }
+    if (!shore) shore = nav.nearestStand(SPAWN.x, SPAWN.z);
+    player.teleport(shore.x, shore.z);
+    rig.recenter(player);
   }
   function startElevator() {
     if (liftBusy || !nearLift()) return false;
@@ -220,6 +262,7 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
     if (!on) { shelterStage = 'idle'; return; }
     if (driving) leave();
     if (flying) leaveHeli();
+    if (sailing) leaveSailboat();
     shelterStage = 'waiting';
     if (liftBusy) shelterStage = 'elevator';
     else if (flying) shelterStage = 'roof-walk';
@@ -240,27 +283,31 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
   function interact() {
     if (enterHeli()) return true;
     if (startElevator()) return true;
+    if (enterSailboat()) return true;
     return enter();
   }
   function tap(x, y) {
-    if (rig.introActive || !people?.hitDog) return false;
+    if (rig.introActive) return false;
     dogNdc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
     dogRaycaster.setFromCamera(dogNdc, stage.camera);
-    if (!people.hitDog(dogRaycaster.ray)) return false;
-    sound?.play('bark');
-    return true;
+    if (people?.hitDog?.(dogRaycaster.ray)) { sound?.play('bark'); return true; }
+    if (nearSailboat() && dogRaycaster.intersectObject(sailboatGroup, true).length) return enterSailboat();
+    return false;
   }
 
   const drivingKeys = new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','p',' ','control']);
   function keydown(e) {
     const key = e.key.toLowerCase();
-    if (!driving && !flying && !liftBusy && (key === 'e' || key === 'f') && !e.repeat && (nearHeli() || nearLift() || nearCar())) {
+    if (!driving && !flying && !sailing && !liftBusy && (key === 'e' || key === 'f') && !e.repeat && (nearHeli() || nearLift() || nearCar() || nearSailboat())) {
       e.preventDefault(); e.stopImmediatePropagation(); interact(); return;
     }
     if (liftBusy) { if (drivingKeys.has(key)) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
-    if (!driving && !flying) return;
+    if (!driving && !flying && !sailing) return;
     if (drivingKeys.has(key)) { e.preventDefault(); e.stopImmediatePropagation(); }
-    if ((key === 'e' || key === 'p') && !e.repeat) { driving ? leave() : leaveHeli(); return; }
+    if ((key === 'e' || key === 'p') && !e.repeat) {
+      if (driving) leave(); else if (flying) leaveHeli(); else leaveSailboat();
+      return;
+    }
     held.add(key);
   }
   function keyup(e) { held.delete(e.key.toLowerCase()); }
@@ -270,17 +317,21 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
   addEventListener('blur', blur);
   exitButton.addEventListener('click', leave);
   heliHud.querySelector('[data-exit]').addEventListener('click', leaveHeli);
+  boatHud.querySelector('[data-exit]').addEventListener('click', leaveSailboat);
 
   return {
     tap,
     update(dt, elapsed) {
       people?.update(dt);
+      boatClock += Math.min(dt, 0.1);
       if (weatherSheltering) {
         if (driving) leave();
         if (flying) leaveHeli();
+        if (sailing) leaveSailboat();
         if (liftBusy) shelterStage = 'elevator';
         else walkPlayerToShelter();
       }
+      poseSailboat();
       if (liftBusy) {
         hint.textContent = liftTarget > 0 ? '电梯上行中…' : '电梯下行中…'; hint.style.display = 'block';
         const liftDelta = liftTarget - liftY;
@@ -318,8 +369,30 @@ export function setup({ stage, world, player, avatar, rig, sound }) {
         hint.style.display = 'none';
         return;
       }
+      if (sailing) {
+        const forward = held.has('w') || held.has('arrowup');
+        const reverse = held.has('s') || held.has('arrowdown');
+        const steer = (held.has('d') || held.has('arrowright') ? 1 : 0) - (held.has('a') || held.has('arrowleft') ? 1 : 0);
+        bSpeed += (forward ? 2.4 : reverse ? -1.8 : 0) * dt;
+        if (!forward && !reverse) bSpeed *= Math.max(0, 1 - dt * 0.65);
+        bSpeed = Math.max(-2, Math.min(4.8, bSpeed));
+        bHeading -= steer * Math.min(1, Math.abs(bSpeed) / 1.2) * 0.72 * dt * Math.sign(bSpeed || 1);
+        const nx = bx + Math.sin(bHeading) * bSpeed * dt;
+        const nz = bz + Math.cos(bHeading) * bSpeed * dt;
+        if (nx >= ISLAND.x1 + 2.8 && nx <= ISLAND.x1 + 25 && nz >= ISLAND.z0 + 3 && nz <= ISLAND.z1 - 3) { bx = nx; bz = nz; }
+        else bSpeed = 0;
+        poseSailboat(); player.pos.set(bx, bz);
+        const bob = Math.sin(boatClock * 0.9) * 0.045;
+        seatRider(bx, sailboat.y + 0.58 + bob, bz, bHeading, -0.32, -0.78, -0.3);
+        boatSpeedLabel.innerHTML = `${Math.round(Math.abs(bSpeed) * 3.6)} <small style="font-size:14px;color:#94a3b8">km/h</small>`;
+        const fx = Math.sin(bHeading), fz = Math.cos(bHeading);
+        stage.camera.position.set(bx - fx * 7, sailboat.y + 3.3 + bob, bz - fz * 7);
+        stage.camera.lookAt(bx, sailboat.y + 1.0 + bob, bz);
+        hint.style.display = 'none';
+        return;
+      }
       if (!driving) {
-        const label = nearHeli() ? '按 E 驾驶直升机' : nearLift() ? '按 E 乘电梯' : nearCar() ? '按 E 驾驶' : '';
+        const label = nearHeli() ? '按 E 驾驶直升机' : nearLift() ? '按 E 乘电梯' : nearCar() ? '按 E 驾驶' : nearSailboat() ? '按 E 登上帆船' : '';
         hint.textContent = label; hint.style.display = label ? 'block' : 'none';
         return;
       }
