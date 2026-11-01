@@ -40,6 +40,7 @@ export function setup({ stage, world, player, avatar, rig }) {
   let x = GARAGE.car[0], z = GARAGE.car[1], heading = 0, speed = 0, driving = false;
   let hx = heli.x, hz = heli.z, hy = heli.y, hHeading = 0, hSpeed = 0, rotorAngle = 0, flying = false;
   let liftY = 0, liftTarget = null, liftBusy = false;
+  let weatherSheltering = false, shelterStage = 'idle';
   const held = new Set();
   const blobScale = avatar.blob.scale.clone();
   const carCompile = car.material.onBeforeCompile;
@@ -164,6 +165,76 @@ export function setup({ stage, world, player, avatar, rig }) {
     rig.recenter(player);
     liftTarget = null;
   }
+
+  function isInsideHouse() {
+    return player.pos.x >= HOUSE.x0 && player.pos.x < HOUSE.x1
+      && player.pos.z >= HOUSE.z0 && player.pos.z < HOUSE.z1 && player.y < HOUSE.height;
+  }
+  function isOnRoofWalkway() {
+    return player.y > HOUSE.height / 2 && player.pos.x >= -2.5 && player.pos.x < HOUSE.x1
+      && player.pos.z >= -3.5 && player.pos.z < -2.5;
+  }
+  function walkPlayerToShelter() {
+    if (isInsideHouse()) { shelterStage = 'inside'; return; }
+    if (player.swimming) {
+      if (shelterStage !== 'swimming') {
+        shelterStage = 'swimming';
+        player.leavePool(0, 4, () => { shelterStage = 'waiting'; });
+      }
+      return;
+    }
+    if (player.flying) {
+      if (shelterStage !== 'landing') { shelterStage = 'landing'; player.stopFlying(); }
+      return;
+    }
+    if (player.mode !== 'ground') { shelterStage = 'waiting'; return; }
+    if (isOnRoofWalkway()) {
+      if (Math.hypot(player.pos.x - elevator.roofX, player.pos.z - elevator.roofZ) < 0.75) {
+        if (startElevator()) shelterStage = 'elevator';
+      } else if (shelterStage !== 'roof-walk' || !player.travelling) {
+        shelterStage = player.goTo(elevator.roofX, elevator.roofZ) ? 'roof-walk' : 'waiting';
+      }
+      return;
+    }
+    if (player.island === 'mountain' && world.mountain) {
+      if (shelterStage !== 'mountain' || !player.travelling) {
+        const trailhead = world.mountain.spots()[0];
+        const trail = world.mountain.route(
+          player.pos.x, player.y, player.pos.z,
+          trailhead.x, world.mountain.heightAt(trailhead.x, trailhead.z), trailhead.z,
+        );
+        trail.push({ x: 8, y: 0, z: -12 }, { x: 8, y: 0, z: 4.2 }, { x: 0, y: 0, z: 4.2 }, { x: 0, y: 0, z: 2.2 });
+        shelterStage = player.follow(trail) ? 'mountain' : 'waiting';
+      }
+      return;
+    }
+    if (shelterStage === 'walking' && player.travelling) return;
+    shelterStage = player.goTo(0, 1.4) ? 'walking' : 'waiting';
+  }
+  function setWeatherSheltering(on) {
+    if (weatherSheltering === on) return;
+    weatherSheltering = on;
+    people?.setSheltering(on);
+    if (!on) { shelterStage = 'idle'; return; }
+    if (driving) leave();
+    if (flying) leaveHeli();
+    shelterStage = 'waiting';
+    if (liftBusy) shelterStage = 'elevator';
+    else if (flying) shelterStage = 'roof-walk';
+    walkPlayerToShelter();
+  }
+  function syncWeatherShelter() {
+    const menu = document.querySelector('#weatherMenu');
+    const mode = menu?.querySelector('[data-weather][aria-checked="true"]')?.dataset.weather;
+    const label = document.querySelector('#moodButton')?.getAttribute('aria-label') || '';
+    setWeatherSheltering(mode === 'rain' || mode === 'thunder'
+      || (mode === 'auto' && /(雨|雷|rain|thunder|storm)/i.test(label)));
+  }
+  const weatherMenu = document.querySelector('#weatherMenu'), weatherButton = document.querySelector('#moodButton');
+  const weatherObserver = new MutationObserver(syncWeatherShelter);
+  if (weatherMenu) weatherObserver.observe(weatherMenu, { subtree: true, attributes: true, attributeFilter: ['aria-checked'] });
+  if (weatherButton) weatherObserver.observe(weatherButton, { attributes: true, attributeFilter: ['aria-label'] });
+  syncWeatherShelter();
   function interact() {
     if (enterHeli()) return true;
     if (startElevator()) return true;
@@ -193,6 +264,12 @@ export function setup({ stage, world, player, avatar, rig }) {
   return {
     update(dt, elapsed) {
       people?.update(dt);
+      if (weatherSheltering) {
+        if (driving) leave();
+        if (flying) leaveHeli();
+        if (liftBusy) shelterStage = 'elevator';
+        else walkPlayerToShelter();
+      }
       if (liftBusy) {
         hint.textContent = liftTarget > 0 ? '电梯上行中…' : '电梯下行中…'; hint.style.display = 'block';
         const liftDelta = liftTarget - liftY;

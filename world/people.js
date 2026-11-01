@@ -17,6 +17,7 @@ export function buildPeople(mountain) {
 }
 
 function createPeople(mountainRoute) {
+  const indoorSpots = [[-2.8, 0, 0.8], [2.8, 0, 0.8], [-2.5, 0, -2.5], [2.5, 0, -2.5], [0, 0, -1.4]];
   const actors = [
     { path: loop([[-4.8, 5.4], [-2.8, 5.4], [-2.8, 8.1], [-4.8, 8.1]]), speed: 0.55, palette: { skin: 0xe9b895, hair: 0x432b25, top: 0x48a8a0, trim: 0xd6c27a, pants: 0x334c75, shoes: 0xe8e1d8 } },
     { path: loop([[2, 5.2], [4.6, 5.2], [4.6, 8.3], [2, 8.3]]), speed: 0.62, palette: { skin: 0xf1c49c, hair: 0x5a3226, top: 0xf08abc, trim: 0xf6bed8, pants: 0x7654a0, shoes: 0xf2eee8, pony: true } },
@@ -36,6 +37,10 @@ function createPeople(mountainRoute) {
       for (let i = 0; i < mountainRoute.length; i++) actor.path.push([mountainRoute[i].x, mountainRoute[i].y, mountainRoute[i].z]);
       for (let i = mountainRoute.length - 2; i > 0; i--) actor.path.push([mountainRoute[i].x, mountainRoute[i].y, mountainRoute[i].z]);
     }
+    actor.normalPath = actor.path;
+    actor.homeSpot = indoorSpots[index];
+    actor.loop = true;
+    actor.arrived = false;
     const first = actor.path[0];
     actor.x = first[0]; actor.y = first[1]; actor.z = first[2];
     actor.heading = 0; actor.segment = 0; actor.progress = 0; actor.phase = index * 1.4;
@@ -81,6 +86,72 @@ function createPeople(mountainRoute) {
   const parentPosition = new THREE.Vector3(), parentRotation = new THREE.Quaternion(), parentMatrix = new THREE.Matrix4();
   const localPosition = new THREE.Vector3(), localScale = new THREE.Vector3(), localMatrix = new THREE.Matrix4();
   const worldMatrix = new THREE.Matrix4(), finalMatrix = new THREE.Matrix4();
+  let sheltering = false;
+
+  function setPath(actor, points, loopPath) {
+    const path = [[actor.x, actor.y, actor.z]];
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i], last = path[path.length - 1];
+      if (Math.hypot(point[0] - last[0], point[1] - last[1], point[2] - last[2]) > 0.04) path.push(point);
+    }
+    if (path.length === 1) path.push([actor.x + 0.1, actor.y, actor.z]);
+    actor.path = path; actor.segment = 0; actor.progress = 0;
+    actor.loop = loopPath; actor.arrived = false;
+  }
+
+  function nearestPathPoint(actor, path) {
+    let nearest = 0, best = Infinity;
+    for (let i = 0; i < path.length; i++) {
+      const point = path[i];
+      const px = Array.isArray(point) ? point[0] : point.x;
+      const py = Array.isArray(point) ? point[1] : point.y;
+      const pz = Array.isArray(point) ? point[2] : point.z;
+      const dx = px - actor.x, dy = py - actor.y, dz = pz - actor.z;
+      const distance = dx * dx + dy * dy + dz * dz;
+      if (distance < best) { best = distance; nearest = i; }
+    }
+    return nearest;
+  }
+
+  function setSheltering(on) {
+    if (sheltering === on) return;
+    sheltering = on;
+    for (let i = 0; i < actors.length; i++) {
+      const actor = actors[i], points = [];
+      if (on) {
+        if (actor.x >= -6 && actor.x < 6 && actor.z >= -9 && actor.z < 3 && actor.y < 8) {
+          actor.path = [[actor.x, actor.y, actor.z]];
+          actor.segment = 0; actor.progress = 0; actor.loop = false; actor.arrived = true;
+          continue;
+        }
+        if (i === 4) {
+          const nearest = nearestPathPoint(actor, mountainRoute);
+          for (let j = nearest; j >= 0; j--) {
+            const p = mountainRoute[j]; points.push([p.x, p.y, p.z]);
+          }
+          points.push([8, 0, -12], [8, 0, 4.2], [0, 0, 4.2], [0, 0, 2.2], actor.homeSpot);
+        } else if (i === 2) {
+          points.push([8, 0, 12], [8, 0, 4.2], [0, 0, 4.2], [0, 0, 2.2], actor.homeSpot);
+        } else if (i === 3) {
+          points.push([25, 0, 12], [8, 0, 12], [8, 0, 4.2], [0, 0, 4.2], [0, 0, 2.2], actor.homeSpot);
+        } else {
+          points.push([0, 0, 4.2], [0, 0, 2.2], actor.homeSpot);
+        }
+        setPath(actor, points, false);
+      } else if (actor.arrived || (actor.x >= -6 && actor.x < 6 && actor.z >= -9 && actor.z < 3 && actor.y < 8)) {
+        points.push([0, 0, 2.2], [0, 0, 4.2]);
+        if (i === 2) points.push([8, 0, 4.2], [8, 0, 12]);
+        else if (i === 3) points.push([8, 0, 4.2], [8, 0, 12], [25, 0, 12]);
+        else if (i === 4) points.push([8, 0, 4.2], [8, 0, -12]);
+        points.push(actor.normalPath[0]);
+        setPath(actor, points, true);
+      } else {
+        const path = actor.normalPath, nearest = nearestPathPoint(actor, path);
+        for (let j = 0; j < path.length; j++) points.push(path[(nearest + j) % path.length]);
+        setPath(actor, points, true);
+      }
+    }
+  }
 
   function update(dt) {
     const step = Math.min(dt, 0.1);
@@ -88,20 +159,33 @@ function createPeople(mountainRoute) {
       const a = actors[i], path = a.path;
       let distance = a.speed * step;
       while (distance > 0) {
-        const from = path[a.segment], to = path[(a.segment + 1) % path.length];
+        const next = a.segment + 1 < path.length ? a.segment + 1 : a.loop ? 0 : -1;
+        if (next < 0) { a.progress = 0; a.arrived = true; distance = 0; break; }
+        const from = path[a.segment], to = path[next];
         const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
         const length = Math.hypot(dx, dy, dz), left = length - a.progress;
-        if (length < 0.001 || left < 0.001) { a.segment = (a.segment + 1) % path.length; a.progress = 0; continue; }
+        if (length < 0.001 || left < 0.001) {
+          if (a.segment + 1 < path.length) a.segment++;
+          else if (a.loop) a.segment = 0;
+          else { a.segment = path.length - 1; a.arrived = true; distance = 0; }
+          a.progress = 0; continue;
+        }
         const travel = Math.min(distance, left);
         a.progress += travel; distance -= travel;
-        if (a.progress >= length - 0.001) { a.segment = (a.segment + 1) % path.length; a.progress = 0; }
+        if (a.progress >= length - 0.001) {
+          if (a.segment + 1 < path.length) a.segment++;
+          else if (a.loop) a.segment = 0;
+          else { a.segment = path.length - 1; a.arrived = true; distance = 0; }
+          a.progress = 0;
+        }
       }
-      const from = path[a.segment], to = path[(a.segment + 1) % path.length];
+      const next = a.segment + 1 < path.length ? a.segment + 1 : a.loop ? 0 : -1;
+      const from = path[a.segment], to = path[next < 0 ? a.segment : next];
       const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
       const length = Math.hypot(dx, dy, dz), t = length > 0 ? a.progress / length : 0;
       a.x = from[0] + dx * t; a.y = from[1] + dy * t; a.z = from[2] + dz * t;
-      a.heading = Math.atan2(dx, dz);
-      a.phase += step * 8;
+      if (length > 0) a.heading = Math.atan2(dx, dz);
+      a.phase += step * (a.arrived ? 1.8 : 8);
       rootPosition.set(a.x, a.y, a.z);
       rootRotation.setFromAxisAngle(Y_AXIS, a.heading);
       rootMatrix.compose(rootPosition, rootRotation, ONE);
@@ -109,8 +193,9 @@ function createPeople(mountainRoute) {
     }
 
     for (let i = 0; i < parts.length; i++) {
-      const p = parts[i], a = actors[p.actor], bob = Math.abs(Math.sin(a.phase)) * (a.bob ?? 0.035);
-      const swing = Math.sin(a.phase) * (a.stride ?? 0.48);
+      const p = parts[i], a = actors[p.actor], walk = a.arrived ? 0 : 1;
+      const bob = Math.abs(Math.sin(a.phase)) * (a.bob ?? 0.035) * walk;
+      const swing = Math.sin(a.phase) * (a.stride ?? 0.48) * walk;
       if (p.parent === 'body') {
         parentPosition.set(0, 0.95 + bob, 0); parentRotation.identity();
       } else if (p.parent === 'head') {
@@ -136,5 +221,5 @@ function createPeople(mountainRoute) {
 
   update(0);
   mesh.computeBoundingSphere();
-  return { mesh, update };
+  return { mesh, update, setSheltering };
 }
