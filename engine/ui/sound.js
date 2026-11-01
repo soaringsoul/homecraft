@@ -1,6 +1,7 @@
 // Every sound here is synthesized; there are no audio files. A soft tick for
-// the switches, a two-note chirp for the phone, a thwip for the web, ticks for
-// the Vertec's vanes, the shelf door, thunder after a flash, and the pool's
+// the switches, a two-note chirp for the phone, a thwip for the web, a bark
+// for the poodle, ticks for the Vertec's vanes, the shelf door, thunder after
+// a flash, and the pool's
 // splashes, drips and bubbles. Rain follows the weather: a soft wash and the
 // patter of separate drops outdoors, dull under the glass roof, a deep hush
 // under the pool's surface with now and then a drop above.
@@ -145,6 +146,15 @@ export function createSound() {
       o.frequency.setValueAtTime(74, t); o.frequency.linearRampToValueAtTime(56, t + 0.45);
       env(og, t, 0.02, 0.45, 0.35);
       o.connect(og).connect(dest); o.start(t); o.stop(t + 0.5);
+    },
+    // Two short, rounded barks built from a filtered burst and a falling tone.
+    bark() {
+      const dest = out(0.32, 0.22), t = ctx.currentTime;
+      for (let i = 0; i < 2; i++) {
+        const at = t + i * 0.19, pitch = 150 + Math.random() * 24;
+        hiss(dest, at, 'bandpass', 720 + Math.random() * 180, 0.9, 0.002, 0.12, 0.8, 360);
+        chirp(dest, at, pitch, pitch * 0.52, 0.12, 0.28, 'sawtooth');
+      }
     },
     // A web shooting out: a short bright hiss falling in pitch ("thwip").
     web() {

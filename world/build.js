@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { buildIsland } from '@engine/world/terrain.js';
 import { buildForest } from '@engine/world/landscape.js';
 import { BoxBatch } from '@engine/world/blocks.js';
@@ -27,7 +28,7 @@ export function build({ grid, layer, materials, stage }) {
   };
 }
 
-export function setup({ stage, world, player, avatar, rig }) {
+export function setup({ stage, world, player, avatar, rig, sound }) {
   const car = world.car;
   const carLights = world.groups.carLights;
   const heli = world.helicopter;
@@ -42,6 +43,7 @@ export function setup({ stage, world, player, avatar, rig }) {
   let liftY = 0, liftTarget = null, liftBusy = false;
   let weatherSheltering = false, shelterStage = 'idle';
   const held = new Set();
+  const dogRaycaster = new THREE.Raycaster(), dogNdc = new THREE.Vector2();
   const blobScale = avatar.blob.scale.clone();
   const carCompile = car.material.onBeforeCompile;
   car.material.onBeforeCompile = (shader, renderer) => {
@@ -240,6 +242,14 @@ export function setup({ stage, world, player, avatar, rig }) {
     if (startElevator()) return true;
     return enter();
   }
+  function tap(x, y) {
+    if (rig.introActive || !people?.hitDog) return false;
+    dogNdc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+    dogRaycaster.setFromCamera(dogNdc, stage.camera);
+    if (!people.hitDog(dogRaycaster.ray)) return false;
+    sound?.play('bark');
+    return true;
+  }
 
   const drivingKeys = new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','p',' ','control']);
   function keydown(e) {
@@ -262,6 +272,7 @@ export function setup({ stage, world, player, avatar, rig }) {
   heliHud.querySelector('[data-exit]').addEventListener('click', leaveHeli);
 
   return {
+    tap,
     update(dt, elapsed) {
       people?.update(dt);
       if (weatherSheltering) {

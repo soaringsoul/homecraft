@@ -266,5 +266,14 @@ function createPeople(mountainRoute) {
 
   update(0);
   mesh.computeBoundingSphere();
-  return { mesh, update, setSheltering };
+  const dogActor = actors.findIndex(actor => actor.poodle);
+  const dogBounds = new THREE.Box3();
+  function hitDog(ray) {
+    if (dogActor < 0) return false;
+    const dog = actors[dogActor];
+    dogBounds.min.set(dog.x - 0.48, dog.y - 0.05, dog.z - 0.62);
+    dogBounds.max.set(dog.x + 0.48, dog.y + 1.02, dog.z + 0.62);
+    return ray.intersectsBox(dogBounds);
+  }
+  return { mesh, update, setSheltering, hitDog };
 }

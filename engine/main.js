@@ -577,6 +577,7 @@ async function boot() {
   }
 
   function tap(x, y) {
+    if (extras.tap?.(x, y)) return;
     const target = pick(x, y);
     if (target.spot?.id === 'portal') { openPortal(); return; }
     // A tap during the opening shot only cuts it short; it does not send
