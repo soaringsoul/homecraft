@@ -22,7 +22,7 @@ function createPeople(mountainRoute) {
     { path: loop([[2, 5.2], [4.6, 5.2], [4.6, 8.3], [2, 8.3]]), speed: 0.62, palette: { skin: 0xf1c49c, hair: 0x5a3226, top: 0xf08abc, trim: 0xf6bed8, pants: 0x7654a0, shoes: 0xf2eee8, pony: true } },
     { path: loop([[10.5, 12.6], [18.8, 12.6], [18.8, 15.4], [10.5, 15.4]]), speed: 0.78, palette: { skin: 0xd99c72, hair: 0x262326, top: 0x426f9f, trim: 0x9bbbd8, pants: 0x343b42, shoes: 0x242629, bag: 0x9b6847 } },
     { path: loop([[25.8, 7.4], [30.2, 7.4], [30.2, 11.5], [25.8, 11.5]]), speed: 0.68, palette: { skin: 0xe5b18a, hair: 0x30261f, top: 0xd46e43, trim: 0xe8bd75, pants: 0x52663b, shoes: 0x554638, bag: 0x70482e } },
-    { path: [], speed: 1.15, palette: { skin: 0xd9a27c, hair: 0x342822, top: 0x56a45a, trim: 0xf0d178, pants: 0x534d75, shoes: 0x504238, bag: 0x735333 } },
+    { path: [], speed: 1.15, stride: 0.82, bob: 0.055, armSwing: 0.68, legSwing: 0.8, palette: { skin: 0xd9a27c, hair: 0x342822, top: 0x56a45a, trim: 0xf0d178, pants: 0x534d75, shoes: 0x504238, bag: 0x735333 } },
   ];
   const parts = [];
   const add = (actorIndex, parent, x, y, z, w, h, d, color) => parts.push({
@@ -109,8 +109,8 @@ function createPeople(mountainRoute) {
     }
 
     for (let i = 0; i < parts.length; i++) {
-      const p = parts[i], a = actors[p.actor], bob = Math.abs(Math.sin(a.phase)) * 0.035;
-      let swing = Math.sin(a.phase) * 0.48;
+      const p = parts[i], a = actors[p.actor], bob = Math.abs(Math.sin(a.phase)) * (a.bob ?? 0.035);
+      const swing = Math.sin(a.phase) * (a.stride ?? 0.48);
       if (p.parent === 'body') {
         parentPosition.set(0, 0.95 + bob, 0); parentRotation.identity();
       } else if (p.parent === 'head') {
@@ -118,11 +118,11 @@ function createPeople(mountainRoute) {
       } else if (p.parent === 'armR' || p.parent === 'armL') {
         const right = p.parent === 'armR';
         parentPosition.set(right ? -0.32 : 0.32, 1.19 + bob, 0);
-        parentRotation.setFromAxisAngle(Z_AXIS, (right ? swing : -swing) * 0.55);
+        parentRotation.setFromAxisAngle(Z_AXIS, (right ? swing : -swing) * (a.armSwing ?? 0.55));
       } else {
         const right = p.parent === 'legR';
         parentPosition.set(right ? -0.12 : 0.12, 0.64, 0);
-        parentRotation.setFromAxisAngle(X_AXIS, right ? swing * 0.7 : -swing * 0.7);
+        parentRotation.setFromAxisAngle(X_AXIS, right ? swing * (a.legSwing ?? 0.7) : -swing * (a.legSwing ?? 0.7));
       }
       parentMatrix.compose(parentPosition, parentRotation, ONE);
       worldMatrix.multiplyMatrices(a.matrix, parentMatrix);
